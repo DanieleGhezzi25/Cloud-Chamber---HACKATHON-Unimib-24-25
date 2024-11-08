@@ -1,0 +1,132 @@
+<html>
+<head>
+<title>liveTrigger_YOLO.ipynb</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #7a7e85;}
+.s1 { color: #cf8e6d;}
+.s2 { color: #bcbec4;}
+.s3 { color: #6aab73;}
+.s4 { color: #bcbec4;}
+.s5 { color: #2aacb8;}
+.s6 { color: #5f826b; font-style: italic;}
+</style>
+</head>
+<body bgcolor="#1e1f22">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#606060" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+liveTrigger_YOLO.ipynb</font>
+</center></td></tr></table>
+<pre><span class="s0">#%% 
+</span><span class="s1">import </span><span class="s2">cv2</span>
+<span class="s1">import </span><span class="s2">numpy </span><span class="s1">as </span><span class="s2">np</span>
+<span class="s1">from </span><span class="s2">IPython </span><span class="s1">import </span><span class="s2">display</span>
+<span class="s1">import </span><span class="s2">ultralytics</span>
+<span class="s1">from </span><span class="s2">ultralytics </span><span class="s1">import </span><span class="s2">YOLO</span>
+<span class="s1">import </span><span class="s2">threading</span>
+
+<span class="s3">''' 
+    Global variables useful to communicate between different threads: 
+        - frame2_resized: frame in which there will be a trace (hopefully) 
+        - results_ready: flag that indicates if the &quot;YOLO thread&quot; has finished its inference.  
+                         This flag is useful to not open more than two thread (the main one, the YOLO one). 
+'''</span>
+
+<span class="s2">frame2_resized </span><span class="s4">= </span><span class="s2">np</span><span class="s4">.</span><span class="s2">zeros</span><span class="s4">((</span><span class="s5">480</span><span class="s4">, </span><span class="s5">640</span><span class="s4">, </span><span class="s5">3</span><span class="s4">), </span><span class="s2">dtype</span><span class="s4">=</span><span class="s2">np</span><span class="s4">.</span><span class="s2">uint8</span><span class="s4">) </span>
+<span class="s2">results_ready </span><span class="s4">= </span><span class="s1">True </span>
+
+<span class="s1">def </span><span class="s2">analyze_frame_YOLO</span><span class="s4">(</span><span class="s2">frame1</span><span class="s4">, </span><span class="s2">trace_prob_threshold</span><span class="s4">):</span>
+    
+    <span class="s6">'''  
+    The function analyzes one frame coming from the video with YOLOv8 model. 
+    It is thought to be called in a separated thread, so the function run in parallel respect to the main program. 
+    The function uses &quot;threading&quot; and &quot;ultralytics&quot; libraries to work. 
+    :param frame1: frame we want to analyze with YOLO algorithm. 
+    :return: 
+    '''</span>
+    
+    <span class="s0"># function that run in another thread doesn't have a &quot;return&quot; line, so we must declare global variables to communicate between threads and functions.</span>
+    <span class="s1">global </span><span class="s2">frame2_resized</span><span class="s4">, </span><span class="s2">results_ready</span>
+    
+    <span class="s0"># does the inference</span>
+    <span class="s2">result </span><span class="s4">= </span><span class="s2">model</span><span class="s4">(</span><span class="s2">frame1</span><span class="s4">, </span><span class="s2">conf</span><span class="s4">=</span><span class="s5">0.25</span><span class="s4">, </span><span class="s2">task</span><span class="s4">=</span><span class="s3">&quot;classify&quot;</span><span class="s4">, </span><span class="s2">mode</span><span class="s4">=</span><span class="s3">&quot;predict&quot;</span><span class="s4">, </span><span class="s2">save</span><span class="s4">=</span><span class="s1">False</span><span class="s4">, </span><span class="s2">save_txt</span><span class="s4">=</span><span class="s1">False</span><span class="s4">, </span><span class="s2">save_conf</span><span class="s4">=</span><span class="s1">True</span><span class="s4">, </span><span class="s2">save_crop</span><span class="s4">=</span><span class="s1">False</span><span class="s4">, </span><span class="s2">verbose</span><span class="s4">=</span><span class="s1">False</span><span class="s4">)</span>
+    
+    <span class="s0"># if the trace probability is greater than the probability threshold, then &quot;return&quot; the analyzed frame to the main program </span>
+    <span class="s2">trace_prob </span><span class="s4">= </span><span class="s2">result</span><span class="s4">[</span><span class="s5">0</span><span class="s4">].</span><span class="s2">probs</span><span class="s4">.</span><span class="s2">data</span><span class="s4">[</span><span class="s5">2</span><span class="s4">].</span><span class="s2">item</span><span class="s4">()</span>
+    <span class="s1">if </span><span class="s2">trace_prob </span><span class="s4">&gt; </span><span class="s2">trace_prob_threshold</span><span class="s4">:</span>
+        <span class="s2">frame2_resized </span><span class="s4">= </span><span class="s2">cv2</span><span class="s4">.</span><span class="s2">resize</span><span class="s4">(</span><span class="s2">frame1</span><span class="s4">.</span><span class="s2">copy</span><span class="s4">(), (</span><span class="s5">640</span><span class="s4">, </span><span class="s5">480</span><span class="s4">))</span>
+
+    <span class="s0"># flag that indicates if the inference is over</span>
+    <span class="s2">results_ready </span><span class="s4">= </span><span class="s1">True</span>
+
+<span class="s1">def </span><span class="s2">video</span><span class="s4">(</span><span class="s2">cap</span><span class="s4">, </span><span class="s2">trace_prob_threshold </span><span class="s4">= </span><span class="s5">0.3</span><span class="s4">, </span><span class="s2">delta_frame </span><span class="s4">= </span><span class="s5">1</span><span class="s4">):</span>
+    
+    <span class="s6">''' 
+    The function shows the live video from webcam and the trace frames analyzed by YOLO algorithm (runned in parallel in another thread)  
+    in two different boxes. 
+    The function uses &quot;cv2&quot; and &quot;numpy&quot; libraries to work.  
+    :param cap: cap cv2-object from which the function takes frames. 
+    :param trace_prob_threshold: float from 0 to 1; threshold for selecting traces. Set to 0.3 by default. 
+    :param delta_frame: it is another way to control the running of YOLO algorithm. Selects every how many frames to analyze the current frame. Set to 1 by default. 
+    :return:  
+    '''</span>
+    
+    <span class="s0"># function that run in another thread doesn't have a &quot;return&quot; line, so we must declare global variables to communicate between threads and functions.</span>
+    <span class="s1">global </span><span class="s2">frame2_resized</span><span class="s4">, </span><span class="s2">results_ready</span>
+    
+    <span class="s2">i_counter </span><span class="s4">= </span><span class="s2">delta_frame  </span><span class="s0"># frame counter</span>
+    
+    <span class="s0"># white stripes to better visualize the video boxes.</span>
+    <span class="s2">white_stripe1 </span><span class="s4">= </span><span class="s2">np</span><span class="s4">.</span><span class="s2">ones</span><span class="s4">((</span><span class="s5">480</span><span class="s4">, </span><span class="s5">20</span><span class="s4">, </span><span class="s5">3</span><span class="s4">), </span><span class="s2">dtype</span><span class="s4">=</span><span class="s2">np</span><span class="s4">.</span><span class="s2">uint8</span><span class="s4">) * </span><span class="s5">255 </span>
+    <span class="s2">white_stripe2 </span><span class="s4">= </span><span class="s2">np</span><span class="s4">.</span><span class="s2">ones</span><span class="s4">((</span><span class="s5">20</span><span class="s4">, </span><span class="s5">1340</span><span class="s4">, </span><span class="s5">3</span><span class="s4">), </span><span class="s2">dtype</span><span class="s4">=</span><span class="s2">np</span><span class="s4">.</span><span class="s2">uint8</span><span class="s4">) * </span><span class="s5">255  </span>
+
+    <span class="s1">while True</span><span class="s4">:</span>
+    
+        <span class="s2">ret1</span><span class="s4">, </span><span class="s2">frame1 </span><span class="s4">= </span><span class="s2">cap</span><span class="s4">.</span><span class="s2">read</span><span class="s4">()</span>
+    
+        <span class="s1">if not </span><span class="s2">ret1</span><span class="s4">:</span>
+            <span class="s2">print</span><span class="s4">(</span><span class="s3">'Errore nella lettura del frame dalla webcam'</span><span class="s4">)</span>
+            <span class="s1">break</span>
+    
+        <span class="s0"># Resizes frame1</span>
+        <span class="s2">frame1_resized </span><span class="s4">= </span><span class="s2">cv2</span><span class="s4">.</span><span class="s2">resize</span><span class="s4">(</span><span class="s2">frame1</span><span class="s4">, (</span><span class="s5">640</span><span class="s4">, </span><span class="s5">480</span><span class="s4">))</span>
+    
+        <span class="s0"># if the precedent YOLO run is concluded, then begins another run</span>
+        <span class="s1">if </span><span class="s2">results_ready </span><span class="s1">is True and </span><span class="s2">i_counter </span><span class="s4">% </span><span class="s2">delta_frame </span><span class="s4">== </span><span class="s5">0</span><span class="s4">:</span>
+            <span class="s2">threading</span><span class="s4">.</span><span class="s2">Thread</span><span class="s4">(</span><span class="s2">target</span><span class="s4">=</span><span class="s2">analyze_frame_YOLO</span><span class="s4">, </span><span class="s2">args</span><span class="s4">=(</span><span class="s2">frame1</span><span class="s4">,</span><span class="s2">trace_prob_threshold</span><span class="s4">)).</span><span class="s2">start</span><span class="s4">()</span>
+            <span class="s2">results_ready </span><span class="s4">= </span><span class="s1">False</span>
+            
+        <span class="s0"># combines all the images</span>
+        <span class="s2">combined_frame_ </span><span class="s4">= </span><span class="s2">cv2</span><span class="s4">.</span><span class="s2">hconcat</span><span class="s4">([</span><span class="s2">white_stripe1</span><span class="s4">, </span><span class="s2">frame1_resized</span><span class="s4">, </span><span class="s2">white_stripe1</span><span class="s4">, </span><span class="s2">frame2_resized</span><span class="s4">, </span><span class="s2">white_stripe1</span><span class="s4">])</span>
+        <span class="s2">combined_frame </span><span class="s4">= </span><span class="s2">cv2</span><span class="s4">.</span><span class="s2">vconcat</span><span class="s4">([</span><span class="s2">combined_frame_</span><span class="s4">, </span><span class="s2">white_stripe2</span><span class="s4">])</span>
+        
+        <span class="s2">cv2</span><span class="s4">.</span><span class="s2">imshow</span><span class="s4">(</span><span class="s3">'Live Trigger'</span><span class="s4">, </span><span class="s2">combined_frame</span><span class="s4">)</span>
+    
+        <span class="s2">i_counter </span><span class="s4">+= </span><span class="s5">1</span>
+    
+        <span class="s1">if </span><span class="s2">cv2</span><span class="s4">.</span><span class="s2">waitKey</span><span class="s4">(</span><span class="s5">1</span><span class="s4">) &amp; </span><span class="s5">0xFF </span><span class="s4">== </span><span class="s2">ord</span><span class="s4">(</span><span class="s3">'q'</span><span class="s4">):</span>
+            <span class="s1">break</span>
+    
+    <span class="s1">return</span>
+
+<span class="s0"># checks computer</span>
+<span class="s2">display</span><span class="s4">.</span><span class="s2">clear_output</span><span class="s4">()</span>
+<span class="s2">ultralytics</span><span class="s4">.</span><span class="s2">checks</span><span class="s4">()</span>
+<span class="s0">#%% 
+</span><span class="s2">model </span><span class="s4">= </span><span class="s2">YOLO</span><span class="s4">(</span><span class="s3">&quot;YOLO-CC-V1.pt&quot;</span><span class="s4">)</span>
+
+<span class="s0"># Initializes the webcam (1 is the second computer webcam)</span>
+<span class="s2">cap </span><span class="s4">= </span><span class="s2">cv2</span><span class="s4">.</span><span class="s2">VideoCapture</span><span class="s4">(</span><span class="s3">rf'C:\Users\Black\Downloads\20240904_165241_2.mp4'</span><span class="s4">)</span>
+
+<span class="s0"># Checks if the webcam is opened properly</span>
+<span class="s1">if not </span><span class="s2">cap</span><span class="s4">.</span><span class="s2">isOpened</span><span class="s4">():</span>
+    <span class="s2">print</span><span class="s4">(</span><span class="s3">r&quot;Errore nell'apertura della webcam&quot;</span><span class="s4">)</span>
+    <span class="s2">exit</span><span class="s4">()</span>
+
+<span class="s2">video</span><span class="s4">(</span><span class="s2">cap</span><span class="s4">)</span>
+
+<span class="s2">cap</span><span class="s4">.</span><span class="s2">release</span><span class="s4">()</span>
+<span class="s2">cv2</span><span class="s4">.</span><span class="s2">destroyAllWindows</span><span class="s4">()</span></pre>
+</body>
+</html>
